@@ -50,7 +50,7 @@ The automated build is managed through several components:
 - *policy.patch* provides a tool to modify the Go source code in the minio/pkg project
 - *minio.build.sh* provides a tool to download MinIO, patch the source code, and build a new MinIO server binary.
 - *Dockerfile* uses a go container image to run minio.build.sh and then build a modified MinIO server container image.
-- *Makefile* calls `docker build` with a https://github.com/minio/minio/tags RELEASE tag (version identifier).
+- *Makefile* calls `docker build` with a https://github.com/stanford-rc/minio/tags RELEASE tag (version identifier).
 
 ### elm-patch
 
@@ -60,7 +60,7 @@ This directory contains the source code for a small self-contained Go program th
    to extend the list of supported JWT claims (this patch is not currently in
    use)
 
-2. `patch_minio_globals.go` which modifies the github.com/minio/minio source
+2. `patch_minio_globals.go` which modifies the github.com/stanford-rc/minio source
    tree to change some of the default global variables.
 
 The `patch.go` file lists the filepaths we expect to modify:
@@ -100,7 +100,7 @@ $ ls -l elm-patch
 $ ls ../src
 README.txt
 
-$ git clone https://github.com/minio/minio.git ../src/minio
+$ git clone https://github.com/stanford-rc/minio.git ../src/minio
 Cloning into '../src/minio'...
 
 $ ./elm-patch -update -backup ../src/minio/cmd/utils.go
@@ -170,7 +170,7 @@ build container and then `./minio.build.sh` is run w/ ssh credentials enabled.
 The Makefile is used to kick off the build process.
 
 Ideally you can simply call `make` to build the latest release, or `make
-<release>` where `<release>` is a tag from github.com/minio/minio/tags that has
+<release>` where `<release>` is a tag from github.com/stanford-rc/minio/tags that has
 been added to the `RELEASES` declaration in the Makefile.  If you have bash
 command line completion for make enabled you should be able to type
 
@@ -187,7 +187,7 @@ RELEASE.2024-04-06T05-26-02Z  RELEASE.2024-06-13T22-53-53Z  RELEASE.2024-08-26T1
 
 If we look at the contents of the Makefile at the time this document was
 written you can see it has a `RELEASES` variable that contains a list of
-identifiers pulled from https://github.com/minio/minio/tags:
+identifiers pulled from https://github.com/stanford-rc/minio/tags:
 
 The list is kept in descending order so that the default target will be to
 build the latest release.
