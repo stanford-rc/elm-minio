@@ -26,7 +26,7 @@ needed.
 This project leverages the elm-patch tool alongside Docker and git to offer an
 automated workflow to:
 
-1. Download a specified RELEASE of MinIO source code
+1. Download a specified release of MinIO source code
 2. Patch variables or otherwise modify the source code
 3. Build a new MinIO binary
 4. Build a stanford-rc/elm-minio docker image
@@ -50,7 +50,7 @@ The automated build is managed through several components:
 - *policy.patch* provides a tool to modify the Go source code in the minio/pkg project
 - *minio.build.sh* provides a tool to download MinIO, patch the source code, and build a new MinIO server binary.
 - *Dockerfile* uses a go container image to run minio.build.sh and then build a modified MinIO server container image.
-- *Makefile* calls `docker build` with a https://github.com/stanford-rc/minio/tags RELEASE tag (version identifier).
+- *Makefile* calls `docker build` with a https://github.com/stanford-rc/minio/tags release tag (version identifier).
 
 ### elm-patch
 
@@ -204,7 +204,7 @@ build the latest release.
 # manages.
 #
 # NB: The order of RELEASES is newest to oldest, so that the default target is
-# the most recent listed RELEASE.
+# the most recent listed release.
 RELEASES=\
 	STANFORD.2026-05-12T20-37-47Z \
 	RELEASE.2024-08-26T15-33-07Z \
@@ -229,7 +229,7 @@ $(RELEASES):
 
 ## Potential Problems 
 
-Don't attempt to downgrade a RELEASE of MinIO without understanding the potential impact.
+Don't attempt to downgrade a release of MinIO without understanding the potential impact.
 
 ## License
 
