@@ -230,3 +230,12 @@ $(RELEASES):
 ## Potential Problems 
 
 Don't attempt to downgrade a RELEASE of MinIO without understanding the potential impact.
+
+## License
+
+This repository contains build tooling for a modified MinIO binary. The build
+tooling and all modifications to MinIO source code are licensed under the
+[GNU Affero General Public License v3 (AGPLv3)](LICENSE).
+
+MinIO is copyright MinIO, Inc. and its contributors, and is also licensed under
+AGPLv3. This project is not affiliated with or endorsed by MinIO, Inc.
