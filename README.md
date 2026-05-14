@@ -206,7 +206,7 @@ build the latest release.
 # NB: The order of RELEASES is newest to oldest, so that the default target is
 # the most recent listed release.
 RELEASES=\
-	STANFORD.2026-05-12T20-37-47Z \
+	STANFORD.2026-05-12T23-03-22Z \
 	RELEASE.2024-08-26T15-33-07Z \
 	RELEASE.2024-06-13T22-53-53Z \
 	RELEASE.2024-04-06T05-26-02Z \
