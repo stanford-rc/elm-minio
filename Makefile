@@ -11,6 +11,19 @@
 #
 # NB: The order of RELEASES is newest to oldest, so that the default target is
 # the most recent listed RELEASE.
+#
+# 2026-09-08: the Elm divergences moved out of elm-patch and into the fork
+# itself, so a tag only carries them if they were committed before it was cut.
+# Every tag listed below predates that move and therefore contains the UPSTREAM
+# 5 MiB minimum part size. minio.build.sh verifies each divergence after
+# checkout and FAILS the build when one is missing, so these targets now fail by
+# design rather than quietly producing a binary that is wrong for Elm. The check
+# runs the divergence tests, which those tags do not contain.
+#
+# They are kept because they remain useful for forensics, where you want the
+# source as it was. To build one, drop the verify_divergences call, and know why
+# you are doing it. Note also that MinIO does not support downgrading, so
+# rebuilding an old release for production was already discouraged.
 RELEASES=\
 	STANFORD.2026-05-12T23-03-22Z \
 	RELEASE.2024-08-26T15-33-07Z \

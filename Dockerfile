@@ -6,16 +6,13 @@ ARG ELM_RELEASE
 FROM amd64/golang:1.25.7
 ARG ELM_RELEASE
 
-RUN apt-get update
-RUN apt-get install -y \
-	jq
+# jq was only needed by the elm-patch dependency-pinning logic, removed 2026-09-08.
 
 RUN mkdir -p -m 0700 ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
 
 WORKDIR /build/
 
 COPY ./minio.build.sh ./
-COPY ./elm-patch/ ./elm-patch/
 COPY ./src/ ./src/
 
 RUN --mount=type=ssh,uid=1000 ssh-add -l

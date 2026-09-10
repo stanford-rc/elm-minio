@@ -2,168 +2,139 @@
 
 ## Overview
 
-This project puts together the infrastructure for an automated build of a modified MinIO server.
-In some cases the MinIO developers did not leave any way to override a default, and we found ourselves needing to change the source code.
-Currently there are two examples of this:
+This project builds a container image for the MinIO server that Elm runs, from
+the Stanford RC fork at https://github.com/stanford-rc/minio.
 
-1. Originally we found the OpenID Connect (OIDC) code hard-coded supported
-   policies and did not provide any way to include custom claims.  Because
-   Stanford's use of `eduperson_entitlement` was not one of the standard claims
-   MinIO referenced, it wasn't available for use.
+A build is a checkout and a compile. There is no patch step.
 
-2. The tape system backing Elm is sensitive to needing to deal with many small
-   files (each file consumes an inode and requires additional metadata to track
-   it).  While we have quotas on the number of objects (including versions) we
-   don't have any way to enforce the size of the parts that make up multipart
-   objects, meaning a user could create an object with many thousands of small
-   parts, which would be detrimental to us.
+## Why there is no patch step
 
-This tool takes advantage of the [AST module](https://pkg.go.dev/go/ast)
-provided by the [go programming language](https://go.dev/) to manage code to
-make point updates to source trees, effectively rewriting the source code where
-needed.
+Until 2026-09-08 this repository carried `elm-patch`, a small Go program that
+used the [AST module](https://pkg.go.dev/go/ast) to rewrite MinIO's source at
+build time. It existed for one reason, stated in its own documentation: MinIO
+upstream made sweeping changes to their codebase, so capturing the *intent* of a
+change was more durable than a diff with line numbers and context.
 
-This project leverages the elm-patch tool alongside Docker and git to offer an
-automated workflow to:
+That reason no longer holds, and the mechanism carried a risk that outweighed it.
 
-1. Download a specified release of MinIO source code
-2. Patch variables or otherwise modify the source code
-3. Build a new MinIO binary
-4. Build a stanford-rc/elm-minio docker image
+**There is no upstream any more.** MinIO withdrew from open source and the
+`github.com/stanford-rc/minio` fork has no upstream remote. Every change in the
+fork now originates with us, so there is no churn for an AST layer to absorb.
 
-We no longer need to worry about the OIDC issues described in issue (1) above,
-we discarded the idea of using MinIO to manage the login procedure.
+**The rewrite could fail silently.** `elm-patch` matched on identifier name and
+exited non-zero only when a *file path* matched no pattern. It never checked that
+a patch changed anything. A rename or a move of `globalMinPartSize` would have
+left the file untouched, and `minio.build.sh` printed
 
-We are using elm-patch to address issue (2), changing the minimum part size for
-multipart objects.
+```
+diff -u "${patch_target}~1" "${patch_target}" || :
+```
 
-You may wonder why we aren't just using a diff file and patch tool to apply
-changes to the upstream source.  The answer is that the MinIO developers seem
-to make fairly sweeping changes to their codebase, and we thought it'd be
-easier to maintain this higher level tooling to capture the intent of changes,
-rather than relying on tracking line numbering and context to apply changes.
+for a human to read while discarding the exit status, so an empty diff, meaning
+the patch matched nothing, passed. The result would have been a green build
+shipping the upstream 5 MiB minimum part size, which is exactly the
+many-small-parts tape problem this repository was created to prevent.
+
+**Nothing could test it.** The value production ran did not exist in the fork, so
+no test there could pin it. Documentation drift followed, as it does.
+
+So the divergences moved into the fork as ordinary source code, where `git log`,
+`git blame`, `gofmt`, `go vet` and `go test` all see them.
+
+## Current divergences from upstream MinIO
+
+Both live in https://github.com/stanford-rc/minio, not here.
+
+| divergence | where | pinned by |
+|---|---|---|
+| `globalMinPartSize` 5 MiB to **5 GiB**, `MINIO_MIN_PART_SIZE` to override | `cmd/utils.go` | `TestMinPartSizeIsElmFiveGiB`, `TestMinAllowedPartSizeUsesTheElmFloor` |
+| multipart write-set enforcement | `cmd/erasure-multipart.go`, `cmd/erasure-object.go` | `cmd/erasure-multipart-*_test.go` |
+
+The minimum part size is raised because Elm's disk tier is archived to tape,
+where every part is a separate file consuming an inode and its own metadata. An
+object assembled from thousands of small parts is expensive to archive and
+expensive to recall. Object and version counts are already quota'd; part size was
+the remaining unbounded dimension.
+
+The OIDC/JWT claims patch that `elm-patch` also carried was already unused, since
+we no longer use MinIO to manage the login procedure. It was removed with the
+rest. If a change to `minio-pkg` is ever needed again it belongs in the
+`stanford-rc/minio-pkg` fork, on the same reasoning as above.
+
+### Environment variables
+
+Three variables exist only on this fork. All three are read from the process
+environment and are deliberately NOT registered in MinIO's config subsystem, so
+they do not appear in `mc admin config`. That is the intent rather than an
+oversight: config keys are cluster-wide persisted policy, and two of these are
+per-process levers meant to be set on one node and restarted to get back to known
+behaviour without a rebuild.
+
+| variable | default | effect | read in |
+|---|---|---|---|
+| `MINIO_MIN_PART_SIZE` | `5GiB` | Overrides the multipart minimum part size. Accepts any humanized size at or above the 5 MiB S3 minimum and below the maximum object size. An unparseable or out-of-range value is fatal at startup rather than silently ignored. | `cmd/utils.go`, resolved once in `serverHandleEnvVars` |
+| `MINIO_MULTIPART_WRITESET` | `on` | `off` restores the upstream write path, skipping write-set enforcement and the commit-set collapse check. A rollback lever, not a policy choice. An unrecoverable part is refused whichever way this is set, because returning 200 for a part that cannot be reconstructed is wrong under any policy. | `cmd/erasure-multipart.go`, read per part and per commit |
+| `MINIO_DANGLING_DELETE` | `off` | `off` audits a dangling verdict and declines to act. `on` restores upstream behaviour, where `deleteIfDangling` removes the whole object version. Upstream has no such switch and always deletes. Any value other than `on` or `off` is treated as `off`. | `cmd/erasure-object.go` |
+
+The default for `MINIO_DANGLING_DELETE` is the one worth understanding before
+changing it. One part below read quorum in a 203-part object makes the whole
+version dangling, and acting on that verdict removes all 203 including the
+roughly 200 intact ones. An object in that state needs a person rather than a
+heal, so the default is to record the verdict and stop.
+
+## Tags before 2026-09-08 are not buildable for production
+
+This is the accepted cost of the move. `elm-patch` applied the part-size change
+to *any* tag, including the 2024 releases listed in the Makefile. Those tags
+contain the upstream 5 MiB value in their source, so building one now produces a
+binary that is wrong for Elm.
+
+`minio.build.sh` checks for each divergence after checkout and **fails the build**
+if one is missing, naming it. Old tags remain buildable for forensics by removing
+that check deliberately, which is the point: it is a decision rather than an
+accident. Note also that MinIO does not support downgrading, so rebuilding an old
+release for production was already discouraged.
 
 ## Components
 
-The automated build is managed through several components:
-
-- *policy.patch* provides a tool to modify the Go source code in the minio/pkg project
-- *minio.build.sh* provides a tool to download MinIO, patch the source code, and build a new MinIO server binary.
-- *Dockerfile* uses a go container image to run minio.build.sh and then build a modified MinIO server container image.
-- *Makefile* calls `docker build` with a https://github.com/stanford-rc/minio/tags release tag (version identifier).
-
-### elm-patch
-
-This directory contains the source code for a small self-contained Go program that can modify the MinIO source code.  Currently there are two patches (one unused):
-
-1. `patch_jwt_claims.go` which modifies the gihhub.com/minio/pkg/ source tree
-   to extend the list of supported JWT claims (this patch is not currently in
-   use)
-
-2. `patch_minio_globals.go` which modifies the github.com/stanford-rc/minio source
-   tree to change some of the default global variables.
-
-The `patch.go` file lists the filepaths we expect to modify:
-
-```
-// Patches maps unix filesystem paths to Patcher
-var Patches = map[string]Patcher{
-        `minio/cmd/utils.go$`: PatchMinioGlobals(),
-        `pkg/policy/condition/keyname.go$`: PatchPkgJWTClaims(),
-}
-```
-
-This is a regular expression match for a relative UNIX filesystem path, and
-they map to instances of the Patcher interface defined in the same file:
-
-```
-// Patcher interface implemented by individual implementations to modify the
-// minio source code
-type Patcher interface {
-        Patch(string) (*bytes.Buffer, error)
-}
-```
-
-Each of the `patch_*.go` files mentioned earlier implement `Patcher` by
-accepting a filepath and returning the updated source code:
-
-```
-$ ls
-ast.go  go.mod  go.sum  main.go  patch.go  patch_jwt_claims.go  patch_minio_globals.go
-
-$ go build
-
-$ ls -l elm-patch
--rwxr-xr-x. 1 jimr jimr 3786751 Feb 21 09:56 elm-patch
-
-
-$ ls ../src
-README.txt
-
-$ git clone https://github.com/stanford-rc/minio.git ../src/minio
-Cloning into '../src/minio'...
-
-$ ./elm-patch -update -backup ../src/minio/cmd/utils.go
-
-$ ls -l ../src/minio/cmd/utils.go*
--rw-------. 1 jimr jimr 33447 Feb 21 09:57 ../src/minio/cmd/utils.go
--rw-r--r--. 1 jimr jimr 33445 Feb 21 09:57 ../src/minio/cmd/utils.go~1
-
-$ diff -u ../src/minio/cmd/utils.go{~1,}
---- ../src/minio/cmd/utils.go~1 2025-02-21 09:57:05.462027983 -0600
-+++ ../src/minio/cmd/utils.go   2025-02-21 09:57:05.463027998 -0600
-@@ -288,8 +288,8 @@
-        // using 'curl' and presigned URL.
-        globalMaxObjectSize = 5 * humanize.TiByte
-
-
--       // Minimum Part size for multipart upload is 5MiB
--       globalMinPartSize = 5 * humanize.MiByte
-+       // Minimum Part size for multipart upload is 5GiB",
-+       globalMinPartSize = 5 * humanize.GiByte
-
-        // Maximum Part ID for multipart upload is 10000
-        // (Acceptable values range from 1 to 10000 inclusive)
-```
-
 ### minio.build.sh
 
-This script builds MinIO from within a Docker container.  If the ./src
-directory contains checked out versions of github.com/stanford-rc/minio and/or
-github.com/stanford-rc/minio-pkg then they will be used, otherwise it will use
-git to fetch them from github.com.  In order to fetch from github.com you need
-to have an ssh key registered with github.com and you need to have set up
-ssh-agent with that key registered in it (via ssh-add).
+Builds the MinIO binary, normally from within the Docker container.
 
-The purpose of allowing ./src to be empty of source trees or not is to aid in
-development work.  The intent is that under normal operation we check out the
-specific release of MinIO we want to patch as part of an automated build and
-then discard it once we've got our custom binary built.
+If `./src/minio` already contains a checked-out copy of
+github.com/stanford-rc/minio it is used as-is, otherwise the script clones it.
+Cloning needs an ssh key registered with github.com and an ssh-agent holding it,
+which is what the Makefile's `--ssh default` and `check-ssh-auth-sock.sh`
+arrange. Allowing `./src` to be pre-populated exists to aid development; under
+normal operation the tag is checked out as part of an automated build and
+discarded once the binary exists.
 
-This script then runs elm-patch against any paths defined in the script's
-`patch_file` array:
+After checkout the script RUNS THE TESTS that assert each Elm divergence and
+fails the build if any of them does not report PASS. A `-run` pattern matching
+nothing exits 0, so each test must be seen to have passed; absence means the test
+is not in the tree, which means the divergence is not either.
 
-```
-# relative source file paths to run elm-patch against
-patch_files=(
-        "minio/cmd/utils.go"
-
-        # we are no longer using minio's built-in ODIC functionality, so we no
-        # longer need to patch the list of supported claims
-        #"pkg/policy/condition/keyname.go"
-)
-```
+That is the third mechanism for this. The first, elm-patch, rewrote the source and
+matched on identifier name. The second grepped the source for the same identifier,
+which is the same coupling, and it broke twice on 2026-09-08: once when the value
+changed from a const to a var, once on a rename. Both times a tree that carried
+the divergence was reported as missing it. A test is rename-proof and also catches
+a divergence that is present but wired to the wrong value.
 
 ### Dockerfile
 
 Docker build file for running minio.build.sh.
 
-The Dockerfile assumes that the caller has ssh credentials to access any
-restricted git URLs, and that the build was called with the `--ssh default`
-arguments (see the Makefile).
+The Dockerfile assumes the caller has ssh credentials for any restricted git
+URLs, and that the build was invoked with `--ssh default`; see the Makefile.
 
-The `./src`, `./elm-patch`, and `./minio.build.sh` script are copied into the
-build container and then `./minio.build.sh` is run w/ ssh credentials enabled.
+`./src` and `./minio.build.sh` are copied into the build container and then
+`./minio.build.sh` is run with ssh credentials enabled.
+
+### xlmeta
+
+A reference `xl.meta` decoder library, ported from the `xl-meta` command line
+utility. Independent of the build tooling and unaffected by any of the above.
 
 ## Makefile
 
