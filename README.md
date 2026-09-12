@@ -11,35 +11,13 @@ A build is a checkout and a compile. There is no patch step.
 
 Until 2026-09-08 this repository carried `elm-patch`, a small Go program that
 used the [AST module](https://pkg.go.dev/go/ast) to rewrite MinIO's source at
-build time. It existed for one reason, stated in its own documentation: MinIO
-upstream made sweeping changes to their codebase, so capturing the *intent* of a
-change was more durable than a diff with line numbers and context.
+build time. It existed because MinIO upstream made sweeping changes to their
+codebase, so capturing the *intent* of a change was more durable than a diff
+with line numbers and context.
 
-That reason no longer holds, and the mechanism carried a risk that outweighed it.
-
-**There is no upstream any more.** MinIO withdrew from open source and the
-`github.com/stanford-rc/minio` fork has no upstream remote. Every change in the
-fork now originates with us, so there is no churn for an AST layer to absorb.
-
-**The rewrite could fail silently.** `elm-patch` matched on identifier name and
-exited non-zero only when a *file path* matched no pattern. It never checked that
-a patch changed anything. A rename or a move of `globalMinPartSize` would have
-left the file untouched, and `minio.build.sh` printed
-
-```
-diff -u "${patch_target}~1" "${patch_target}" || :
-```
-
-for a human to read while discarding the exit status, so an empty diff, meaning
-the patch matched nothing, passed. The result would have been a green build
-shipping the upstream 5 MiB minimum part size, which is exactly the
-many-small-parts tape problem this repository was created to prevent.
-
-**Nothing could test it.** The value production ran did not exist in the fork, so
-no test there could pin it. Documentation drift followed, as it does.
-
-So the divergences moved into the fork as ordinary source code, where `git log`,
-`git blame`, `gofmt`, `go vet` and `go test` all see them.
+MinIO withdrew from open source and the `github.com/stanford-rc/minio` fork has
+no upstream remote. Every change in the fork now originates with us, so there
+is no longer any churn for an AST layer to absorb.
 
 ## Current divergences from upstream MinIO
 
@@ -113,13 +91,6 @@ After checkout the script RUNS THE TESTS that assert each Elm divergence and
 fails the build if any of them does not report PASS. A `-run` pattern matching
 nothing exits 0, so each test must be seen to have passed; absence means the test
 is not in the tree, which means the divergence is not either.
-
-That is the third mechanism for this. The first, elm-patch, rewrote the source and
-matched on identifier name. The second grepped the source for the same identifier,
-which is the same coupling, and it broke twice on 2026-09-08: once when the value
-changed from a const to a var, once on a rename. Both times a tree that carried
-the divergence was reported as missing it. A test is rename-proof and also catches
-a divergence that is present but wired to the wrong value.
 
 ### Dockerfile
 
@@ -201,6 +172,11 @@ $(RELEASES):
 ## Potential Problems 
 
 Don't attempt to downgrade a release of MinIO without understanding the potential impact.
+
+The upstream maintainers made no guarantee of backward compatability, so they
+would make changes to the binary format of files written and only ever offered
+an upgrade path, meaning downgrading to a prior release could result in minio
+thinking binary files it had written using a later release were corrupted.
 
 ## License
 
