@@ -11,7 +11,7 @@
 # NB: The order of RELEASES is newest to oldest, so that the default target is
 # the most recent listed RELEASE.
 RELEASES=\
-	STANFORD.2026-09-14T15-02-22Z \
+	STANFORD.2026-09-15T15-43-39Z \
 	RELEASE.2024-08-26T15-33-07Z
 
 # Given a github.com/stanford-rc/minio repo tag, call docker build with the arg
