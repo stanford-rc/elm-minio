@@ -11,6 +11,7 @@
 # NB: The order of RELEASES is newest to oldest, so that the default target is
 # the most recent listed RELEASE.
 RELEASES=\
+	STANFORD.2026-09-18T21-24-27Z \
 	STANFORD.2026-09-18T16-25-26Z \
 	RELEASE.2024-08-26T15-33-07Z
 
