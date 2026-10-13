@@ -26,7 +26,7 @@ Both live in https://github.com/stanford-rc/minio, not here.
 | divergence | where | pinned by |
 |---|---|---|
 | `globalMinPartSize` 5 MiB to **5 GiB**, `MINIO_MIN_PART_SIZE` to override | `cmd/utils.go` | `TestMinPartSizeIsElmFiveGiB`, `TestMinAllowedPartSizeUsesTheElmFloor` |
-| multipart write-set enforcement | `cmd/erasure-multipart.go`, `cmd/erasure-object.go` | `cmd/erasure-multipart-*_test.go` |
+| write-set checks: the multipart commit failure for an unreadable part, and shortfall logging and repair queueing for multipart and single-part PUTs | `cmd/erasure-multipart.go`, `cmd/erasure-object.go`, `cmd/erasure-object-writeset.go` | `cmd/erasure-multipart-*_test.go`, `cmd/erasure-object-writeset_test.go` |
 
 The minimum part size is raised because Elm's disk tier is archived to tape,
 where every part is a separate file consuming an inode and its own metadata. An
@@ -51,7 +51,7 @@ behaviour without a rebuild.
 | variable | default | effect | read in |
 |---|---|---|---|
 | `MINIO_MIN_PART_SIZE` | `5GiB` | Overrides the multipart minimum part size. Accepts any humanized size at or above the 5 MiB S3 minimum and below the maximum object size. An unparseable or out-of-range value is fatal at startup rather than silently ignored. | `cmd/utils.go`, resolved once in `serverHandleEnvVars` |
-| `MINIO_MULTIPART_WRITESET` | `on` | `off` restores the upstream write path, skipping write-set enforcement and the commit-set collapse check. A rollback lever, not a policy choice. An unrecoverable part is refused whichever way this is set, because returning 200 for a part that cannot be reconstructed is wrong under any policy. | `cmd/erasure-multipart.go`, read per part and per commit |
+| `MINIO_MULTIPART_WRITESET` | `on` | `off` turns off write-set shortfall logging for multipart parts and single-part PUTs, and the commit-boundary checks that queue a heal for a multipart object short a copy. A rollback lever, not a policy choice. The commit failure for a part left unreadable, and the refusal of an unrecoverable part, run whichever way this is set, because returning 200 for data that cannot be read back is wrong under any policy. | `cmd/erasure-multipart.go`, `cmd/erasure-object-writeset.go`, read per write and per commit |
 | `MINIO_DANGLING_DELETE` | `off` | `off` audits a dangling verdict and declines to act. `on` restores upstream behaviour, where `deleteIfDangling` removes the whole object version. Upstream has no such switch and always deletes. Any value other than `on` or `off` is treated as `off`. | `cmd/erasure-object.go` |
 
 The default for `MINIO_DANGLING_DELETE` is the one worth understanding before
