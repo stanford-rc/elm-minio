@@ -17,6 +17,10 @@ RELEASES=\
 	STANFORD.2026-09-30T00-07-26Z \
 	RELEASE.2024-08-26T15-33-07Z
 
+# BUILD_FLAGS are extra docker build flags, e.g. BUILD_FLAGS='--no-cache
+# --pull' to rebuild from a freshly pulled base.
+BUILD_FLAGS ?=
+
 # Given a github.com/stanford-rc/minio repo tag, call docker build with the arg
 # ELM_RELEASE=<release> set, and tagging the resulting image as
 # ghcr.io/stanford-rc/elm-minio:<release>.
@@ -25,6 +29,7 @@ $(RELEASES):
 	export EPOCH=$$(date --date $$(echo $@ | sed 's,RELEASE.,,;s,STANFORD.,,;s,\(.*T\)\(..\)-\(..\)-\(..\),\1\2:\3:\4,') +%s) && \
 	docker \
 		build . \
+		$(BUILD_FLAGS) \
 		--debug \
 		--progress plain \
 		--ssh default \

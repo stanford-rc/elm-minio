@@ -18,10 +18,14 @@ RUN --mount=type=ssh,uid=1000 /bin/bash -x ./minio.build.sh "${ELM_RELEASE}"
 
 FROM redhat/ubi9-minimal
 
+# install does not upgrade a package the base already has, so the update is
+# what makes the trust store current when the base lags a ca-certificates
+# erratum.
 RUN microdnf install -y \
 	ca-certificates \
 	openssl \
 	tzdata \
+	&& microdnf update -y ca-certificates \
 	&& microdnf clean all
 
 ARG ELM_RELEASE
